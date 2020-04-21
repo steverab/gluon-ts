@@ -15,10 +15,14 @@ from .representation import Representation
 from .binning_helpers import (
     ensure_binning_monotonicity,
     bin_edges_from_bin_centers,
+    mxnet_digitize,
+    mxnet_quantile,
+    mxnet_bin_edges_from_bin_centers
 )
 
 # Standard library imports
 from typing import Tuple, Optional
+import time
 
 # Third-party imports
 import numpy as np
@@ -116,80 +120,141 @@ class LocalAbsoluteBinning(Representation):
         observed_indicator: Tensor,
         scale: Optional[Tensor],
     ) -> Tuple[Tensor, Tensor]:
-        data_np = data.asnumpy()
-        observed_indicator_np = observed_indicator.astype("int32").asnumpy()
+        # NUMPY
+        # data_np = data.asnumpy()
+        # observed_indicator_np = observed_indicator.astype("int32").asnumpy()
 
-        if scale is None:
-            # Even though local binning implicitly scales the data, we still return the scale as an input to the model.
-            scale = F.expand_dims(
-                F.sum(data, axis=-1) / F.sum(observed_indicator, axis=-1), -1
-            )
+        with mx.autograd.pause():
 
-            self.bin_centers_hyb = np.ones((len(data), self.num_bins)) * (-1)
-            self.bin_edges_hyb = np.ones((len(data), self.num_bins + 1)) * (-1)
+            if scale is None:
+                # Even though local binning implicitly scales the data, we still return the scale as an input to the model.
+                scale = F.expand_dims(
+                    F.sum(data, axis=-1) / F.sum(observed_indicator, axis=-1), -1
+                )
 
-            # Every time series needs to be binned individually
-            for i in range(len(data_np)):
-                # Identify observed data points.
-                data_loc = data_np[i]
-                observed_indicator_loc = observed_indicator_np[i]
-                data_obs_loc = data_loc[observed_indicator_loc == 1]
+                self.bin_centers_hyb = F.ones((len(data), self.num_bins)) * (-1)
+                self.bin_edges_hyb = F.ones((len(data), self.num_bins + 1)) * (-1)
 
-                if data_obs_loc.size > 0:
-                    # Calculate time series specific bin centers and edges.
-                    if self.is_quantile:
-                        bin_centers_loc = np.quantile(
-                            data_obs_loc, np.linspace(0, 1, self.num_bins)
+                # Every time series needs to be binned individually
+                for i in range(len(data)):
+                    # Identify observed data points.
+                    # NUMPY
+                    # data_loc = data_np[i]
+                    # observed_indicator_loc = observed_indicator_np[i]
+                    # data_obs_loc = data_loc[observed_indicator_loc == 1]
+
+                    # print(i)
+
+                    index = F.full(1, i)
+                    data_loc = F.squeeze(F.take(data, index, axis=0), axis=0)
+                    observed_indicator_loc = F.squeeze(F.take(observed_indicator, F.full(1, i), axis=0), axis=0)
+                    first_obs_index = 0
+                    while first_obs_index < len(data_loc):
+                        if data_loc[first_obs_index] != 0:
+                            break
+                        first_obs_index = first_obs_index + 1
+                    data_obs_loc = data_loc.slice_axis(axis=0, begin=first_obs_index, end=None)
+
+
+                    # print(data_loc_mx)
+                    # print(observed_indicator_loc_mx)
+                    # print(data_obs_loc_mx)
+                    # print(observed_indicator_loc_mx * F.arange(0, len(data_loc_mx)))
+
+                    # exit(0)
+
+                    if data_obs_loc.size > 0:
+                        # Calculate time series specific bin centers and edges.
+                        if self.is_quantile:
+                            # print('----------')
+                            # t = time.process_time()
+                            # NUMPY
+                            # bin_centers_loc = np.quantile(
+                            #     data_obs_loc, np.linspace(0, 1, self.num_bins)
+                            # )
+                            # elapsed_time = time.process_time() - t
+                            # print(elapsed_time)
+                            # print(bin_centers_loc)
+
+                            # data_obs_loc_mx = F.array(data_obs_loc)
+
+                            # t = time.process_time()
+                            quantile_levels = F.linspace(0, 1, self.num_bins)
+                            bin_centers_loc = mxnet_quantile(F, data_obs_loc, quantile_levels)
+                            
+                            # elapsed_time = time.process_time() - t
+                            # print(elapsed_time)
+                            # bin_centers_loc = bin_centers_loc.asnumpy()
+                            # print(bin_centers_loc)
+                        else:
+                            bin_centers_loc = F.linspace(
+                                F.min(data_obs_loc),
+                                F.max(data_obs_loc),
+                                self.num_bins,
+                            )
+                        # self.bin_centers_hyb[i] = ensure_binning_monotonicity(
+                        #     bin_centers_loc
+                        # )
+                        self.bin_centers_hyb[i] = bin_centers_loc.asnumpy()
+
+                        # self.bin_edges_hyb[i] = bin_edges_from_bin_centers(
+                        #     self.bin_centers_hyb[i]
+                        # )
+
+                        self.bin_edges_hyb[i] = mxnet_bin_edges_from_bin_centers(
+                            F, self.bin_centers_hyb[i]
+                        ).asnumpy()
+
+                        # Bin the time series.
+                        # data_obs_loc_binned = np.digitize(
+                        #     data_obs_loc, bins=self.bin_edges_hyb[i], right=False
+                        # )
+
+                        data_obs_loc_binned = mxnet_digitize(
+                            F, data_obs_loc.expand_dims(-1), F.array(self.bin_edges_hyb[i]), self.num_bins
                         )
+                        data_obs_loc_binned = F.squeeze(data_obs_loc_binned, axis=-1)
+                        # print(data_obs_loc_binned)
+
                     else:
-                        bin_centers_loc = np.linspace(
-                            np.min(data_obs_loc),
-                            np.max(data_obs_loc),
-                            self.num_bins,
-                        )
-                    self.bin_centers_hyb[i] = ensure_binning_monotonicity(
-                        bin_centers_loc
-                    )
-                    self.bin_edges_hyb[i] = bin_edges_from_bin_centers(
-                        self.bin_centers_hyb[i]
-                    )
+                        data_obs_loc_binned = []
 
-                    # Bin the time series.
+                    # Write the binned time series back into the data array.
+                    # data_loc[observed_indicator_loc == 1] = data_obs_loc_binned
+                    # data_np[i] = data_loc
+                    data_loc[first_obs_index:] = data_obs_loc_binned
+                    data[i] = data_loc
+            else:
+                data_np = data.asnumpy()
+                observed_indicator_np = observed_indicator.asnumpy()
+                
+                self.bin_edges_hyb = np.repeat(
+                    self.bin_edges_hyb,
+                    len(data_np) / len(self.bin_edges_hyb),
+                    axis=0,
+                )
+                self.bin_centers_hyb = np.repeat(
+                    self.bin_centers_hyb,
+                    len(data_np) / len(self.bin_centers_hyb),
+                    axis=0,
+                )
+
+                for i in range(len(data_np)):
+                    data_loc = data_np[i]
+                    observed_indicator_loc = observed_indicator_np[i]
+                    data_obs_loc = data_loc[observed_indicator_loc == 1]
+
+                    # Bin the time series based on previously computed bin edges.
                     data_obs_loc_binned = np.digitize(
                         data_obs_loc, bins=self.bin_edges_hyb[i], right=False
                     )
-                else:
-                    data_obs_loc_binned = []
 
-                # Write the binned time series back into the data array.
-                data_loc[observed_indicator_loc == 1] = data_obs_loc_binned
-                data_np[i] = data_loc
-        else:
-            self.bin_edges_hyb = np.repeat(
-                self.bin_edges_hyb,
-                len(data_np) / len(self.bin_edges_hyb),
-                axis=0,
-            )
-            self.bin_centers_hyb = np.repeat(
-                self.bin_centers_hyb,
-                len(data_np) / len(self.bin_centers_hyb),
-                axis=0,
-            )
+                    data_loc[observed_indicator_loc == 1] = data_obs_loc_binned
+                    data_np[i] = data_loc
 
-            for i in range(len(data_np)):
-                data_loc = data_np[i]
-                observed_indicator_loc = observed_indicator_np[i]
-                data_obs_loc = data_loc[observed_indicator_loc == 1]
-
-                # Bin the time series based on previously computed bin edges.
-                data_obs_loc_binned = np.digitize(
-                    data_obs_loc, bins=self.bin_edges_hyb[i], right=False
-                )
-
-                data_loc[observed_indicator_loc == 1] = data_obs_loc_binned
-                data_np[i] = data_loc
-
-        data = mx.nd.array(data_np)
+        # data = mx.nd.array(data_np)
+        # print(self.bin_centers_hyb)
+        # print(self.bin_edges_hyb)
 
         # In PIT mode, we rescale the binned data to [0,1] and optionally pass the data through a MLP to achieve the
         # same level of expressiveness as binning with embedding.
@@ -210,7 +275,7 @@ class LocalAbsoluteBinning(Representation):
             return emb.swapaxes(1, 2), scale
 
     def post_transform(self, F, x: Tensor):
-        bin_cent = mx.nd.array(self.bin_centers_hyb)
+        bin_cent = F.array(self.bin_centers_hyb)
         x_oh = F.one_hot(F.squeeze(x), self.num_bins)
 
         # Pick corresponding bin centers for all samples

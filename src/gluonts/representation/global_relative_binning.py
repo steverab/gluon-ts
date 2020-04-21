@@ -15,6 +15,7 @@ from .representation import Representation
 from .binning_helpers import (
     ensure_binning_monotonicity,
     bin_edges_from_bin_centers,
+    mxnet_digitize,
 )
 
 # Standard library imports
@@ -171,20 +172,28 @@ class GlobalRelativeBinning(Representation):
             )
             # Clip scale on the bottom to prevent division by zero.
             scale = F.clip(scale, 1e-20, np.inf)
-        self.scale = scale.asnumpy()
+        self.scale = scale
 
         # Rescale the data.
-        data_rescaled = data.asnumpy() / np.repeat(
-            self.scale, data.shape[1], axis=1
-        )
+        # data_rescaled = data.asnumpy() / np.repeat(
+        #     self.scale, data.shape[1], axis=1
+        # )
+        data_rescaled = F.broadcast_div(data, scale)
 
         # Discretize the data.
         # Note: Replace this once there is a clean way to do this in MXNet.
-        data_binned = np.digitize(
-            data_rescaled, bins=self.bin_edges, right=False
+        # data_binned = np.digitize(
+        #     data_rescaled, bins=self.bin_edges, right=False
+        # )
+        # data = F.array(data_binned)
+        data = mxnet_digitize(
+            F, data_rescaled, F.array(self.bin_edges), self.num_bins
         )
 
-        data = F.array(data_binned)
+        # print(data_binned_np)
+        # print(data_binned_mx.asnumpy())
+        # print(np.allclose(data_binned_np-1, data_binned_mx.asnumpy()))
+        # exit(0)
 
         # Store bin centers for later usage in post_transform.
         self.bin_centers_hyb = np.repeat(
