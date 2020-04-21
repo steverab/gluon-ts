@@ -25,6 +25,8 @@ from gluonts.distribution import DistributionOutput
 from gluonts.model.common import Tensor
 from gluonts.model.transformer.trans_encoder import TransformerEncoder
 from gluonts.model.transformer.trans_decoder import TransformerDecoder
+from gluonts.representation import Representation
+from gluonts.support.util import copy_parameters, weighted_average
 
 
 LARGE_NEGATIVE_VALUE = -99999999
@@ -46,11 +48,12 @@ class TransformerNetwork(mx.gluon.HybridBlock):
         history_length: int,
         context_length: int,
         prediction_length: int,
+        input_repr: Representation,
+        output_repr: Representation,
         distr_output: DistributionOutput,
         cardinality: List[int],
         embedding_dimension: int,
         lags_seq: List[int],
-        scaling: bool = True,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -58,9 +61,10 @@ class TransformerNetwork(mx.gluon.HybridBlock):
         self.history_length = history_length
         self.context_length = context_length
         self.prediction_length = prediction_length
-        self.scaling = scaling
         self.cardinality = cardinality
         self.embedding_dimension = embedding_dimension
+        self.input_repr = input_repr
+        self.output_repr = output_repr
         self.distr_output = distr_output
 
         assert len(set(lags_seq)) == len(
@@ -80,11 +84,6 @@ class TransformerNetwork(mx.gluon.HybridBlock):
                 cardinalities=cardinality,
                 embedding_dims=[embedding_dimension for _ in cardinality],
             )
-
-            if scaling:
-                self.scaler = MeanScaler(keepdims=True)
-            else:
-                self.scaler = NOPScaler(keepdims=True)
 
     @staticmethod
     def get_lagged_subsequences(
@@ -128,7 +127,7 @@ class TransformerNetwork(mx.gluon.HybridBlock):
             end_index = -lag_index if lag_index > 0 else None
             lagged_values.append(
                 F.slice_axis(
-                    sequence, axis=1, begin=begin_index, end=end_index
+                    sequence, axis=2, begin=begin_index, end=end_index
                 )
             )
 
@@ -145,6 +144,7 @@ class TransformerNetwork(mx.gluon.HybridBlock):
             Tensor
         ],  # (batch_size, num_features, prediction_length)
         future_target: Optional[Tensor],  # (batch_size, prediction_length)
+        future_observed_values: Optional[Tensor],
     ) -> Tuple[Tensor, Tensor, Tensor]:
         """
         Creates inputs for the transformer network.
@@ -158,6 +158,7 @@ class TransformerNetwork(mx.gluon.HybridBlock):
                 end=None,
             )
             sequence = past_target
+            sequence_obs = past_observed_values
             sequence_length = self.history_length
             subsequences_length = self.context_length
         else:
@@ -171,28 +172,24 @@ class TransformerNetwork(mx.gluon.HybridBlock):
                 dim=1,
             )
             sequence = F.concat(past_target, future_target, dim=1)
+            sequence_obs = F.concat(
+                past_observed_values, future_observed_values, dim=1
+            )
             sequence_length = self.history_length + self.prediction_length
             subsequences_length = self.context_length + self.prediction_length
+
+        input_tar_repr, scale = self.input_repr(sequence, sequence_obs, None)
 
         # (batch_size, sub_seq_len, *target_shape, num_lags)
         lags = self.get_lagged_subsequences(
             F=F,
-            sequence=sequence,
+            sequence=input_tar_repr,
             sequence_length=sequence_length,
             indices=self.lags_seq,
             subsequences_length=subsequences_length,
         )
+        lags = F.swapaxes(lags, 1, 2)
 
-        # scale is computed on the context length last units of the past target
-        # scale shape is (batch_size, 1, *target_shape)
-        _, scale = self.scaler(
-            past_target.slice_axis(
-                axis=1, begin=-self.context_length, end=None
-            ),
-            past_observed_values.slice_axis(
-                axis=1, begin=-self.context_length, end=None
-            ),
-        )
         embedded_cat = self.embedder(feat_static_cat)
 
         # in addition to embedding features, use the log scale as it can help prediction too
@@ -209,17 +206,14 @@ class TransformerNetwork(mx.gluon.HybridBlock):
             axis=1, repeats=subsequences_length
         )
 
-        # (batch_size, sub_seq_len, *target_shape, num_lags)
-        lags_scaled = F.broadcast_div(lags, scale.expand_dims(axis=-1))
-
         # from (batch_size, sub_seq_len, *target_shape, num_lags)
         # to (batch_size, sub_seq_len, prod(target_shape) * num_lags)
         input_lags = F.reshape(
-            data=lags_scaled,
+            data=lags,
             shape=(
-                -1,
-                subsequences_length,
-                len(self.lags_seq) * prod(self.target_shape),
+                lags.shape[0],
+                lags.shape[1],
+                lags.shape[2] * lags.shape[3],
             ),
         )
 
@@ -250,6 +244,7 @@ class TransformerTrainingNetwork(TransformerNetwork):
         past_observed_values: Tensor,
         future_time_feat: Tensor,
         future_target: Tensor,
+        future_observed_values: Tensor,
     ) -> Tensor:
         """
         Computes the loss for training Transformer, all inputs tensors representing time series have NTC layout.
@@ -278,6 +273,7 @@ class TransformerTrainingNetwork(TransformerNetwork):
             past_observed_values=past_observed_values,
             future_time_feat=future_time_feat,
             future_target=future_target,
+            future_observed_values=future_observed_values,
         )
 
         enc_input = F.slice_axis(
@@ -300,9 +296,24 @@ class TransformerTrainingNetwork(TransformerNetwork):
         # compute loss
         distr_args = self.proj_dist_args(dec_output)
         distr = self.distr_output.distribution(distr_args, scale=scale)
-        loss = distr.loss(future_target)
 
-        return loss.mean()
+        output_tar_repr, _ = self.output_repr(
+            future_target, future_observed_values, None
+        )
+
+        loss = distr.loss(output_tar_repr)
+
+        loss_weights = (
+            future_observed_values
+            if (len(self.target_shape) == 0)
+            else future_observed_values.min(axis=-1, keepdims=False)
+        )
+
+        weighted_loss = weighted_average(
+            F=F, x=loss, weights=loss_weights, axis=1
+        )
+
+        return weighted_loss, loss
 
 
 class TransformerPredictionNetwork(TransformerNetwork):
@@ -367,24 +378,33 @@ class TransformerPredictionNetwork(TransformerNetwork):
 
         # for each future time-units we draw new samples for this time-unit and update the state
         for k in range(self.prediction_length):
+            input_tar_repr, _ = self.input_repr(
+                repeated_past_target,
+                F.ones_like(repeated_past_target),
+                repeated_scale,
+            )
+            self.output_repr(
+                repeated_past_target,
+                F.ones_like(repeated_past_target),
+                repeated_scale,
+            )
+
             lags = self.get_lagged_subsequences(
                 F=F,
-                sequence=repeated_past_target,
+                sequence=input_tar_repr,
                 sequence_length=self.history_length + k,
                 indices=self.shifted_lags,
                 subsequences_length=1,
             )
+            lags = F.swapaxes(lags, 1, 2)
 
-            # (batch_size * num_samples, 1, *target_shape, num_lags)
-            lags_scaled = F.broadcast_div(
-                lags, repeated_scale.expand_dims(axis=-1)
-            )
-
-            # from (batch_size * num_samples, 1, *target_shape, num_lags)
-            # to (batch_size * num_samples, 1, prod(target_shape) * num_lags)
             input_lags = F.reshape(
-                data=lags_scaled,
-                shape=(-1, 1, prod(self.target_shape) * len(self.lags_seq)),
+                data=lags,
+                shape=(
+                    lags.shape[0],
+                    lags.shape[1],
+                    lags.shape[2] * lags.shape[3],
+                ),
             )
 
             # (batch_size * num_samples, 1, prod(target_shape) * num_lags + num_time_features + num_static_features)
@@ -406,6 +426,8 @@ class TransformerPredictionNetwork(TransformerNetwork):
 
             # (batch_size * num_samples, 1, *target_shape)
             new_samples = distr.sample()
+
+            new_samples = self.output_repr.post_transform(F, new_samples)
 
             # (batch_size * num_samples, seq_len, *target_shape)
             repeated_past_target = F.concat(
@@ -464,7 +486,10 @@ class TransformerPredictionNetwork(TransformerNetwork):
             past_observed_values=past_observed_values,
             future_time_feat=None,
             future_target=None,
+            future_observed_values=None,
         )
+
+        self.output_repr(past_target, past_observed_values, None)
 
         # pass through encoder
         enc_out = self.encoder(inputs)
