@@ -17,7 +17,7 @@ from .binning_helpers import (
     bin_edges_from_bin_centers,
     mxnet_digitize,
     mxnet_quantile,
-    mxnet_bin_edges_from_bin_centers
+    mxnet_bin_edges_from_bin_centers,
 )
 
 # Standard library imports
@@ -129,11 +129,16 @@ class LocalAbsoluteBinning(Representation):
             if scale is None:
                 # Even though local binning implicitly scales the data, we still return the scale as an input to the model.
                 scale = F.expand_dims(
-                    F.sum(data, axis=-1) / F.sum(observed_indicator, axis=-1), -1
+                    F.sum(data, axis=-1) / F.sum(observed_indicator, axis=-1),
+                    -1,
                 )
 
-                self.bin_centers_hyb = F.ones((len(data), self.num_bins)) * (-1)
-                self.bin_edges_hyb = F.ones((len(data), self.num_bins + 1)) * (-1)
+                self.bin_centers_hyb = F.ones((len(data), self.num_bins)) * (
+                    -1
+                )
+                self.bin_edges_hyb = F.ones((len(data), self.num_bins + 1)) * (
+                    -1
+                )
 
                 # Every time series needs to be binned individually
                 for i in range(len(data)):
@@ -147,14 +152,18 @@ class LocalAbsoluteBinning(Representation):
 
                     index = F.full(1, i)
                     data_loc = F.squeeze(F.take(data, index, axis=0), axis=0)
-                    observed_indicator_loc = F.squeeze(F.take(observed_indicator, F.full(1, i), axis=0), axis=0)
+                    observed_indicator_loc = F.squeeze(
+                        F.take(observed_indicator, F.full(1, i), axis=0),
+                        axis=0,
+                    )
                     first_obs_index = 0
                     while first_obs_index < len(data_loc):
                         if data_loc[first_obs_index] != 0:
                             break
                         first_obs_index = first_obs_index + 1
-                    data_obs_loc = data_loc.slice_axis(axis=0, begin=first_obs_index, end=None)
-
+                    data_obs_loc = data_loc.slice_axis(
+                        axis=0, begin=first_obs_index, end=None
+                    )
 
                     # print(data_loc_mx)
                     # print(observed_indicator_loc_mx)
@@ -180,8 +189,10 @@ class LocalAbsoluteBinning(Representation):
 
                             # t = time.process_time()
                             quantile_levels = F.linspace(0, 1, self.num_bins)
-                            bin_centers_loc = mxnet_quantile(F, data_obs_loc, quantile_levels)
-                            
+                            bin_centers_loc = mxnet_quantile(
+                                F, data_obs_loc, quantile_levels
+                            )
+
                             # elapsed_time = time.process_time() - t
                             # print(elapsed_time)
                             # bin_centers_loc = bin_centers_loc.asnumpy()
@@ -201,7 +212,9 @@ class LocalAbsoluteBinning(Representation):
                         #     self.bin_centers_hyb[i]
                         # )
 
-                        self.bin_edges_hyb[i] = mxnet_bin_edges_from_bin_centers(
+                        self.bin_edges_hyb[
+                            i
+                        ] = mxnet_bin_edges_from_bin_centers(
                             F, self.bin_centers_hyb[i]
                         ).asnumpy()
 
@@ -211,9 +224,14 @@ class LocalAbsoluteBinning(Representation):
                         # )
 
                         data_obs_loc_binned = mxnet_digitize(
-                            F, data_obs_loc.expand_dims(-1), F.array(self.bin_edges_hyb[i]), self.num_bins
+                            F,
+                            data_obs_loc.expand_dims(-1),
+                            F.array(self.bin_edges_hyb[i]),
+                            self.num_bins,
                         )
-                        data_obs_loc_binned = F.squeeze(data_obs_loc_binned, axis=-1)
+                        data_obs_loc_binned = F.squeeze(
+                            data_obs_loc_binned, axis=-1
+                        )
                         # print(data_obs_loc_binned)
 
                     else:
@@ -227,7 +245,7 @@ class LocalAbsoluteBinning(Representation):
             else:
                 data_np = data.asnumpy()
                 observed_indicator_np = observed_indicator.asnumpy()
-                
+
                 self.bin_edges_hyb = np.repeat(
                     self.bin_edges_hyb,
                     len(data_np) / len(self.bin_edges_hyb),

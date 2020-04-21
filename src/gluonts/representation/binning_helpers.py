@@ -52,6 +52,7 @@ def mxnet_bin_edges_from_bin_centers(F, bin_centers: Tensor):
     )
     return bin_edges
 
+
 def mxnet_quantile(F, x: Tensor, quantile_levels: Tensor):
     # print("-----")
     # print(x)
@@ -63,7 +64,7 @@ def mxnet_quantile(F, x: Tensor, quantile_levels: Tensor):
     # print(quantile_ind)
     # print(quantiles)
     return quantiles
-    
+
 
 def mxnet_digitize(F, x: Tensor, bins: Tensor, num_bins: int):
     bins = F.repeat(bins.expand_dims(axis=0), repeats=len(x), axis=0)
