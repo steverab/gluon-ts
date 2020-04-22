@@ -541,11 +541,10 @@ class WaveNetSampler(WaveNet):
             scale=scale,
         )
 
-        feature_slice = F.slice_axis(
-            full_features,
-            begin=-self.pred_length - self.receptive_field + 1,
-            end=None,
-            axis=-1,
+        # To compute queues for the first step, we need features from
+        # -self.pred_length - self.receptive_field + 1 to -self.pred_length + 1
+        features_end_ix = (
+            -self.pred_length + 1 if self.pred_length > 1 else None
         )
         queues = self.get_initial_conv_queues(
             F,
@@ -553,7 +552,10 @@ class WaveNetSampler(WaveNet):
                 input_tar_repr, begin=-self.receptive_field, end=None, axis=-1
             ),
             features=F.slice_axis(
-                feature_slice, begin=-self.receptive_field, end=None, axis=-1
+                full_features,
+                begin=-self.pred_length - self.receptive_field + 1,
+                end=features_end_ix,
+                axis=-1,
             ),
         )
         queues = [blow_up(queue) for queue in queues]
