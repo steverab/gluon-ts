@@ -24,13 +24,13 @@ from gluonts.dataset.common import Dataset
 
 class HybridRepresentation(Representation):
     """
-        A class representing a hybrid approach of combining multiple representations into a single representation.
-        Representations will be combined by concatenating them at on dim=1.
+    A class representing a hybrid approach of combining multiple representations into a single representation.
+    Representations will be combined by concatenating them on dim=1.
 
-        Parameters
-        ----------
-        representations
-            A list of representations. Elements must be of type Representation.
+    Parameters
+    ----------
+    representations
+        A list of representations. Elements must be of type Representation.
     """
 
     @validated()
@@ -52,30 +52,19 @@ class HybridRepresentation(Representation):
         observed_indicator: Optional[Tensor],
         scale: Optional[Tensor],
     ) -> Tuple[Tensor, Tensor]:
-        representation_data_agg = None
+        representation_list = []
 
         for representation in self.representations:
             representation_data, _ = representation(
                 data, observed_indicator, scale
             )
-            if self.is_output:
-                representation_data = representation_data.expand_dims(
-                    -1
-                ).swapaxes(1, 2)
+            representation_list.append(representation_data)
 
-            if representation_data_agg is None:
-                representation_data_agg = representation_data
-            else:
-                representation_data_agg = F.concat(
-                    representation_data_agg, representation_data, dim=1
-                )
+        representation_agg = F.concat(*representation_list, dim=1)
 
         if scale is None:
             scale = F.expand_dims(
                 F.sum(data, axis=-1) / F.sum(observed_indicator, axis=-1), -1
             )
 
-        return representation_data_agg, scale
-
-    def post_transform(self, F, samples: Tensor):
-        raise NotImplementedError
+        return representation_agg, scale

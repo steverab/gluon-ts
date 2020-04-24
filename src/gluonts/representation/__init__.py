@@ -13,21 +13,27 @@
 
 # Relative imports
 from .representation import Representation
-from .binning import Binning
+from .custom_binning import CustomBinning
 from .global_relative_binning import GlobalRelativeBinning
 from .local_absolute_binning import LocalAbsoluteBinning
 from .hybrid_representation import HybridRepresentation
 from .mean_scaling import MeanScaling
 from .nop_scaling import NOPScaling
+from .dim_expansion import DimExpansion
+from .embedding import Embedding
+from .discrete_pit import DiscretePIT
 
 __all__ = [
     "Representation",
-    "Binning",
+    "CustomBinning",
     "GlobalRelativeBinning",
     "LocalAbsoluteBinning",
     "HybridRepresentation",
     "MeanScaling",
     "NOPScaling",
+    "DimExpansion",
+    "Embedding",
+    "DiscretePIT",
 ]
 
 # fix Sphinx issues, see https://bit.ly/2K2eptM

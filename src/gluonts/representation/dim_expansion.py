@@ -19,17 +19,33 @@ from typing import Tuple, Optional
 # First-party imports
 from gluonts.core.component import validated
 from gluonts.model.common import Tensor
+from gluonts.dataset.common import Dataset
 
 
-class NOPScaling(Representation):
+class DimExpansion(Representation):
     """
-    A class representing NOP (no operation) scaler.
-    As the name suggests, this scaler will not alter its inputs.
+    A class representing a dimension expansion operation of a given representation along a specified axis.
+
+    Parameters
+    ----------
+    representation
+        The underlying representation.
+    axis
+        Axis on which to expand the tensor.
+        (default: 1)
     """
 
     @validated()
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self, representation: Representation, axis: int = 1, *args, **kwargs
+    ):
         super().__init__(*args, **kwargs)
+        self.representation = representation
+        self.register_child(representation)
+        self.axis = axis
+
+    def initialize_from_dataset(self, input_dataset: Dataset):
+        self.representation.initialize_from_dataset(input_dataset)
 
     # noinspection PyMethodOverriding
     def hybrid_forward(
@@ -39,10 +55,8 @@ class NOPScaling(Representation):
         observed_indicator: Tensor,
         scale: Optional[Tensor],
     ) -> Tuple[Tensor, Tensor]:
-        data = F.cast(data, dtype="float32")
+        repr_data, scale = self.representation(data, observed_indicator, scale)
 
-        if scale is None:
-            scale = F.ones_like(data)
-            scale = scale.expand_dims(axis=1)
+        repr_data = F.expand_dims(repr_data, axis=self.axis)
 
-        return data, scale
+        return repr_data, scale
