@@ -180,11 +180,11 @@ hyb_cases = [
     "r, target, observed, expected_repr", hyb_cases,
 )
 def test_hyb(r, target, observed, expected_repr):
-    target_transf, _ = r(target, observed, None)
+    target_transf, _, _ = r(target, observed, None, [])
 
     for i in range(len(expected_repr)):
         exp_loc = expected_repr[i].asnumpy()
-        target_loc = target_transf[:, i, :].asnumpy()
+        target_loc = target_transf[:, :, i].asnumpy()
         print(target_loc)
         assert np.allclose(
             exp_loc, target_loc

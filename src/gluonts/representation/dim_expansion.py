@@ -14,7 +14,7 @@
 from .representation import Representation
 
 # Standard library imports
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 # First-party imports
 from gluonts.core.component import validated
@@ -37,7 +37,7 @@ class DimExpansion(Representation):
 
     @validated()
     def __init__(
-        self, representation: Representation, axis: int = 1, *args, **kwargs
+        self, representation: Representation, axis: int = -1, *args, **kwargs
     ):
         super().__init__(*args, **kwargs)
         self.representation = representation
@@ -54,9 +54,12 @@ class DimExpansion(Representation):
         data: Tensor,
         observed_indicator: Tensor,
         scale: Optional[Tensor],
-    ) -> Tuple[Tensor, Tensor]:
-        repr_data, scale = self.representation(data, observed_indicator, scale)
+        rep_params: List[Tensor],
+    ) -> Tuple[Tensor, Tensor, List[Tensor]]:
+        repr_data, scale, rep_params = self.representation(
+            data, observed_indicator, scale, rep_params
+        )
 
         repr_data = F.expand_dims(repr_data, axis=self.axis)
 
-        return repr_data, scale
+        return repr_data, scale, rep_params

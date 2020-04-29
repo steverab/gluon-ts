@@ -49,22 +49,23 @@ class HybridRepresentation(Representation):
         self,
         F,
         data: Tensor,
-        observed_indicator: Optional[Tensor],
+        observed_indicator: Tensor,
         scale: Optional[Tensor],
-    ) -> Tuple[Tensor, Tensor]:
+        rep_params: List[Tensor],
+    ) -> Tuple[Tensor, Tensor, List[Tensor]]:
         representation_list = []
 
         for representation in self.representations:
-            representation_data, _ = representation(
-                data, observed_indicator, scale
+            representation_data, _, _ = representation(
+                data, observed_indicator, scale, rep_params,
             )
             representation_list.append(representation_data)
 
-        representation_agg = F.concat(*representation_list, dim=1)
+        representation_agg = F.concat(*representation_list, dim=-1)
 
         if scale is None:
             scale = F.expand_dims(
                 F.sum(data, axis=-1) / F.sum(observed_indicator, axis=-1), -1
             )
 
-        return representation_agg, scale
+        return representation_agg, scale, []
