@@ -47,7 +47,11 @@ from gluonts.transform import (
     SimpleTransformation,
     VstackFeatures,
 )
-from gluonts.representation import Representation, GlobalRelativeBinning
+from gluonts.representation import (
+    Representation,
+    GlobalRelativeBinning,
+    Embedding,
+)
 from gluonts.distribution import DistributionOutput, CategoricalOutput
 
 
@@ -108,10 +112,10 @@ class WaveNetEstimator(GluonEstimator):
             This is a model optimization that does not affect the accuracy (default: 200)
         input_repr
             Representation for the model inputs.
-            (default: GlobalRelativeBinning(num_bins=1024))
+            (default: Embedding(GlobalRelativeBinning(num_bins=1024)))
         output_repr
             Representation for the model outputs.
-            (default: GlobalRelativeBinning(num_bins=1024, is_output=True))
+            (default: GlobalRelativeBinning(num_bins=1024))
         distr_output
             Distribution used to evaluate observations and sample predictions.
             (default: Categorical(num_cats=1024))
@@ -140,10 +144,10 @@ class WaveNetEstimator(GluonEstimator):
         temperature: float = 1.0,
         act_type: str = "elu",
         num_parallel_samples: int = 200,
-        input_repr: Representation = GlobalRelativeBinning(num_bins=1024),
-        output_repr: Representation = GlobalRelativeBinning(
-            num_bins=1024, is_output=True
+        input_repr: Representation = Embedding(
+            GlobalRelativeBinning(num_bins=1024)
         ),
+        output_repr: Representation = GlobalRelativeBinning(num_bins=1024),
         distr_output: DistributionOutput = CategoricalOutput(num_cats=1024),
     ) -> None:
         """

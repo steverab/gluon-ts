@@ -31,7 +31,12 @@ from gluonts.transform import (
     InstanceSplitter,
     Transformation,
 )
-from gluonts.representation import Representation, MeanScaling, NOPScaling
+from gluonts.representation import (
+    Representation,
+    MeanScaling,
+    NOPScaling,
+    DimExpansion,
+)
 
 # Relative imports
 from ._network import (
@@ -83,10 +88,10 @@ class SimpleFeedForwardEstimator(GluonEstimator):
         (default: None, in which case context_length = prediction_length)
     input_repr
         Representation for the model inputs.
-        (default: MeanScaling())
+        (default: DimExpansion(MeanScaling()))
     output_repr
         Representation for the model outputs.
-        (default: NOPScaling(is_output=True))
+        (default: NOPScaling())
     distr_output
         Distribution to fit (default: StudentTOutput())
     batch_normalization
@@ -108,8 +113,8 @@ class SimpleFeedForwardEstimator(GluonEstimator):
         trainer: Trainer = Trainer(),
         num_hidden_dimensions: Optional[List[int]] = None,
         context_length: Optional[int] = None,
-        input_repr: Representation = MeanScaling(),
-        output_repr: Representation = NOPScaling(is_output=True),
+        input_repr: Representation = DimExpansion(MeanScaling()),
+        output_repr: Representation = NOPScaling(),
         distr_output: DistributionOutput = StudentTOutput(),
         batch_normalization: bool = False,
         num_parallel_samples: int = 100,

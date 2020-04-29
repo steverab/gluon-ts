@@ -44,7 +44,12 @@ from gluonts.transform import (
     Transformation,
     VstackFeatures,
 )
-from gluonts.representation import Representation, MeanScaling, NOPScaling
+from gluonts.representation import (
+    Representation,
+    MeanScaling,
+    NOPScaling,
+    DimExpansion,
+)
 
 # Relative imports
 from gluonts.model.transformer._network import (
@@ -85,10 +90,10 @@ class TransformerEstimator(GluonEstimator):
             dimension is used for all embeddings, default: 5)
         input_repr
             Representation for the model inputs.
-            (default: MeanScaling())
+            (default: DimExpansion(MeanScaling()))
         output_repr
             Representation for the model outputs.
-            (default: NOPScaling(is_output=True))
+            (default: NOPScaling())
         distr_output
             Distribution to use to evaluate observations and sample predictions
             (default: StudentTOutput())
@@ -133,8 +138,8 @@ class TransformerEstimator(GluonEstimator):
         dropout_rate: float = 0.1,
         cardinality: Optional[List[int]] = None,
         embedding_dimension: int = 20,
-        input_repr: Representation = MeanScaling(),
-        output_repr: Representation = NOPScaling(is_output=True),
+        input_repr: Representation = DimExpansion(MeanScaling()),
+        output_repr: Representation = NOPScaling(),
         distr_output: DistributionOutput = StudentTOutput(),
         model_dim: int = 32,
         inner_ff_dim_scale: int = 4,

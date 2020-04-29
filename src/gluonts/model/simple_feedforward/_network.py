@@ -91,7 +91,9 @@ class SimpleFeedForwardNetworkBase(mx.gluon.HybridBlock):
                 )
             )
 
-    def get_distr(self, F, past_target: Tensor) -> Tuple[Distribution, Tensor]:
+    def get_distr(
+        self, F, past_target: Tensor
+    ) -> Tuple[Distribution, Tensor, List[Tensor]]:
         """
         Given past target values, applies the feed-forward network and
         maps the output to a probability distribution for future observations.
@@ -109,16 +111,22 @@ class SimpleFeedForwardNetworkBase(mx.gluon.HybridBlock):
             The predicted probability distribution for future observations.
         """
 
-        input_tar_repr, scale = self.input_repr(
-            past_target, F.ones_like(past_target), None
+        input_tar_repr, scale, _ = self.input_repr(
+            past_target, F.ones_like(past_target), None, []
         )
 
-        self.output_repr(past_target, F.ones_like(past_target), None)
+        _, _, rep_params = self.output_repr(
+            past_target, F.ones_like(past_target), None, []
+        )
 
         mlp_outputs = self.mlp(input_tar_repr)
 
         distr_args = self.distr_args_proj(mlp_outputs)
-        return self.distr_output.distribution(distr_args, scale=scale), scale
+        return (
+            self.distr_output.distribution(distr_args, scale=scale),
+            scale,
+            rep_params,
+        )
 
 
 class SimpleFeedForwardTrainingNetwork(SimpleFeedForwardNetworkBase):
@@ -145,10 +153,10 @@ class SimpleFeedForwardTrainingNetwork(SimpleFeedForwardNetworkBase):
         Tensor
             Loss tensor. Shape: (batch_size, ).
         """
-        distr, _ = self.get_distr(F, past_target)
+        distr, _, _ = self.get_distr(F, past_target)
 
-        output_tar_repr, _ = self.output_repr(
-            future_target, F.ones_like(future_target), None
+        output_tar_repr, _, _ = self.output_repr(
+            future_target, F.ones_like(future_target), None, []
         )
 
         # (batch_size, prediction_length, target_dim)
@@ -185,9 +193,11 @@ class SimpleFeedForwardPredictionNetwork(SimpleFeedForwardNetworkBase):
             Prediction sample. Shape: (batch_size, samples, prediction_length).
         """
 
-        distr, scale = self.get_distr(F, past_target)
+        distr, scale, rep_params = self.get_distr(F, past_target)
 
-        self.output_repr(past_target, F.ones_like(past_target), scale)
+        _, _, rep_params = self.output_repr(
+            past_target, F.ones_like(past_target), scale, rep_params
+        )
 
         # (num_samples, batch_size, prediction_length)
         samples = distr.sample(self.num_parallel_samples)
@@ -205,7 +215,9 @@ class SimpleFeedForwardPredictionNetwork(SimpleFeedForwardNetworkBase):
                     samples_sub, begin=j, end=j + 1, axis=0
                 ).squeeze(axis=0)
                 samples_sub = F.squeeze(
-                    self.output_repr.post_transform(F, samples_sub)
+                    self.output_repr.post_transform(
+                        F, samples_sub, scale, rep_params
+                    )
                 )
                 tranf_loc_samples.append(samples_sub.expand_dims(axis=-1))
             tranf_all_samples.append(

@@ -45,7 +45,12 @@ from gluonts.transform import (
     Transformation,
     VstackFeatures,
 )
-from gluonts.representation import Representation, MeanScaling, NOPScaling
+from gluonts.representation import (
+    Representation,
+    MeanScaling,
+    NOPScaling,
+    DimExpansion,
+)
 
 # Relative imports
 from ._network import DeepARPredictionNetwork, DeepARTrainingNetwork
@@ -99,10 +104,10 @@ class DeepAREstimator(GluonEstimator):
         (default: [min(50, (cat+1)//2) for cat in cardinality])
     input_repr
         Representation for the model inputs.
-        (default: MeanScaling())
+        (default: DimExpansion(MeanScaling()))
     output_repr
         Representation for the model outputs.
-        (default: NOPScaling(is_output=True))
+        (default: NOPScaling())
     distr_output
         Distribution to use to evaluate observations and sample predictions
         (default: StudentTOutput())
@@ -134,8 +139,8 @@ class DeepAREstimator(GluonEstimator):
         use_feat_static_real: bool = False,
         cardinality: Optional[List[int]] = None,
         embedding_dimension: Optional[List[int]] = None,
-        input_repr: Representation = MeanScaling(),
-        output_repr: Representation = NOPScaling(is_output=True),
+        input_repr: Representation = DimExpansion(MeanScaling()),
+        output_repr: Representation = NOPScaling(),
         distr_output: DistributionOutput = StudentTOutput(),
         lags_seq: Optional[List[int]] = None,
         time_features: Optional[List[TimeFeature]] = None,

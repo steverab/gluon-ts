@@ -127,7 +127,7 @@ class TransformerNetwork(mx.gluon.HybridBlock):
             end_index = -lag_index if lag_index > 0 else None
             lagged_values.append(
                 F.slice_axis(
-                    sequence, axis=2, begin=begin_index, end=end_index
+                    sequence, axis=1, begin=begin_index, end=end_index
                 )
             )
 
@@ -178,7 +178,9 @@ class TransformerNetwork(mx.gluon.HybridBlock):
             sequence_length = self.history_length + self.prediction_length
             subsequences_length = self.context_length + self.prediction_length
 
-        input_tar_repr, scale = self.input_repr(sequence, sequence_obs, None)
+        input_tar_repr, scale, rep_params_in = self.input_repr(
+            sequence, sequence_obs, None, []
+        )
 
         # (batch_size, sub_seq_len, *target_shape, num_lags)
         lags = self.get_lagged_subsequences(
@@ -188,7 +190,6 @@ class TransformerNetwork(mx.gluon.HybridBlock):
             indices=self.lags_seq,
             subsequences_length=subsequences_length,
         )
-        lags = F.swapaxes(lags, 1, 2)
 
         embedded_cat = self.embedder(feat_static_cat)
 
@@ -220,7 +221,7 @@ class TransformerNetwork(mx.gluon.HybridBlock):
         # (batch_size, sub_seq_len, input_dim)
         inputs = F.concat(input_lags, time_feat, repeated_static_feat, dim=-1)
 
-        return inputs, scale, static_feat
+        return inputs, scale, static_feat, rep_params_in
 
     @staticmethod
     def upper_triangular_mask(F, d):
@@ -265,7 +266,7 @@ class TransformerTrainingNetwork(TransformerNetwork):
         """
 
         # create the inputs for the encoder
-        inputs, scale, _ = self.create_network_input(
+        inputs, scale, _, _ = self.create_network_input(
             F=F,
             feat_static_cat=feat_static_cat,
             past_time_feat=past_time_feat,
@@ -297,8 +298,8 @@ class TransformerTrainingNetwork(TransformerNetwork):
         distr_args = self.proj_dist_args(dec_output)
         distr = self.distr_output.distribution(distr_args, scale=scale)
 
-        output_tar_repr, _ = self.output_repr(
-            future_target, future_observed_values, None
+        output_tar_repr, _, _ = self.output_repr(
+            future_target, future_observed_values, None, []
         )
 
         loss = distr.loss(output_tar_repr)
@@ -334,6 +335,8 @@ class TransformerPredictionNetwork(TransformerNetwork):
         time_feat: Tensor,
         scale: Tensor,
         enc_out: Tensor,
+        rep_params_in: List[Tensor],
+        rep_params_out: List[Tensor],
     ) -> Tensor:
         """
         Computes sample paths by unrolling the LSTM starting with a initial input and state.
@@ -378,15 +381,17 @@ class TransformerPredictionNetwork(TransformerNetwork):
 
         # for each future time-units we draw new samples for this time-unit and update the state
         for k in range(self.prediction_length):
-            input_tar_repr, _ = self.input_repr(
+            input_tar_repr, _, _ = self.input_repr(
                 repeated_past_target,
                 F.ones_like(repeated_past_target),
                 repeated_scale,
+                rep_params_in,
             )
-            self.output_repr(
+            _, _, rep_params = self.output_repr(
                 repeated_past_target,
                 F.ones_like(repeated_past_target),
                 repeated_scale,
+                rep_params_out,
             )
 
             lags = self.get_lagged_subsequences(
@@ -396,7 +401,6 @@ class TransformerPredictionNetwork(TransformerNetwork):
                 indices=self.shifted_lags,
                 subsequences_length=1,
             )
-            lags = F.swapaxes(lags, 1, 2)
 
             input_lags = F.reshape(
                 data=lags,
@@ -427,7 +431,9 @@ class TransformerPredictionNetwork(TransformerNetwork):
             # (batch_size * num_samples, 1, *target_shape)
             new_samples = distr.sample()
 
-            new_samples = self.output_repr.post_transform(F, new_samples)
+            new_samples = self.output_repr.post_transform(
+                F, new_samples, repeated_scale, rep_params
+            )
 
             # (batch_size * num_samples, seq_len, *target_shape)
             repeated_past_target = F.concat(
@@ -441,12 +447,20 @@ class TransformerPredictionNetwork(TransformerNetwork):
         # (batch_size * num_samples, prediction_length, *target_shape)
         samples = F.concat(*future_samples, dim=1)
 
-        # (batch_size, num_samples, *target_shape, prediction_length)
+        # # (batch_size, num_samples, *target_shape, prediction_length)
+        # return samples.reshape(
+        #     shape=(
+        #         (-1, self.num_parallel_samples)
+        #         + self.target_shape
+        #         + (self.prediction_length,)
+        #     )
+        # )
+        # (batch_size, num_samples, prediction_length, *target_shape)
         return samples.reshape(
             shape=(
                 (-1, self.num_parallel_samples)
-                + self.target_shape
                 + (self.prediction_length,)
+                + self.target_shape
             )
         )
 
@@ -478,7 +492,7 @@ class TransformerPredictionNetwork(TransformerNetwork):
         """
 
         # create the inputs for the encoder
-        inputs, scale, static_feat = self.create_network_input(
+        inputs, scale, static_feat, rep_params_in = self.create_network_input(
             F=F,
             feat_static_cat=feat_static_cat,
             past_time_feat=past_time_feat,
@@ -489,7 +503,9 @@ class TransformerPredictionNetwork(TransformerNetwork):
             future_observed_values=None,
         )
 
-        self.output_repr(past_target, past_observed_values, None)
+        _, _, rep_params_out = self.output_repr(
+            past_target, past_observed_values, None, []
+        )
 
         # pass through encoder
         enc_out = self.encoder(inputs)
@@ -501,4 +517,6 @@ class TransformerPredictionNetwork(TransformerNetwork):
             static_feat=static_feat,
             scale=scale,
             enc_out=enc_out,
+            rep_params_in=rep_params_in,
+            rep_params_out=rep_params_out,
         )

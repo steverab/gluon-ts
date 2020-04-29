@@ -380,10 +380,13 @@ class WaveNet(nn.HybridBlock):
             past_observed_values, future_observed_values, dim=-1
         )
 
-        input_tar_repr, scale = self.input_repr(
-            full_target, full_observed, None,
+        input_tar_repr, scale, _ = self.input_repr(
+            full_target, full_observed, None, []
         )
-        output_tar_repr, _ = self.output_repr(full_target, full_observed, None)
+        input_tar_repr = input_tar_repr.swapaxes(1, 2)
+        output_tar_repr, _, _ = self.output_repr(
+            full_target, full_observed, None, []
+        )
 
         full_features = self.get_full_features(
             F,
@@ -526,10 +529,13 @@ class WaveNetSampler(WaveNet):
             """
             return F.repeat(u, repeats=self.num_samples, axis=0)
 
-        input_tar_repr, scale = self.input_repr(
-            past_target, past_observed_values, None,
+        input_tar_repr, scale, rep_params_in = self.input_repr(
+            past_target, past_observed_values, None, []
         )
-        self.output_repr(past_target, past_observed_values, None)
+        input_tar_repr = input_tar_repr.swapaxes(1, 2)
+        _, _, rep_params_out = self.output_repr(
+            past_target, past_observed_values, None, []
+        )
 
         full_features = self.get_full_features(
             F,
@@ -568,11 +574,18 @@ class WaveNetSampler(WaveNet):
             # corresponding to the last two time steps.
             current_target = F.slice_axis(res, begin=-2, end=None, axis=-1)
 
-            input_tar_repr_loc, _ = self.input_repr(
-                current_target, F.ones_like(current_target), scale_bu
+            input_tar_repr_loc, _, _ = self.input_repr(
+                current_target,
+                F.ones_like(current_target),
+                scale_bu,
+                rep_params_in,
             )
-            self.output_repr(
-                current_target, F.ones_like(current_target), scale_bu
+            input_tar_repr_loc = input_tar_repr_loc.swapaxes(1, 2)
+            _, _, rep_params = self.output_repr(
+                current_target,
+                F.ones_like(current_target),
+                scale_bu,
+                rep_params_out,
             )
 
             current_features = F.slice_axis(
@@ -595,7 +608,7 @@ class WaveNetSampler(WaveNet):
             distr = self.distr_output.distribution(distr_args, scale=scale_bu)
 
             y = distr.sample()
-            y = self.output_repr.post_transform(F, y)
+            y = self.output_repr.post_transform(F, y, scale_bu, rep_params)
 
             res = F.concat(res, y, num_args=2, dim=-1)
         samples = F.slice_axis(res, begin=-self.pred_length, end=None, axis=-1)
