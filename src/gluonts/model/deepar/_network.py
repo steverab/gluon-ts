@@ -248,23 +248,24 @@ class DeepARNetwork(mx.gluon.HybridBlock):
 
         # from (batch_size, sub_seq_len, *target_shape, num_lags)
         # to (batch_size, sub_seq_len, prod(target_shape) * num_lags)
-        # input_lags = F.reshape(
-        #     data=lags_scaled,
-        #     shape=(
-        #         -1,
-        #         subsequences_length,
-        #         len(self.lags_seq) * prod(self.target_shape),
-        #     ),
-        # )
-
         input_lags = F.reshape(
             data=lags,
             shape=(
-                lags.shape[0],
-                lags.shape[1],
-                lags.shape[2] * lags.shape[3],
+                -1,
+                subsequences_length,
+                # len(self.lags_seq) * prod(self.target_shape),
+                -3,
             ),
         )
+
+        # input_lags = F.reshape(
+        #     data=lags,
+        #     shape=(
+        #         lags.shape[0],
+        #         lags.shape[1],
+        #         lags.shape[2] * lags.shape[3],
+        #     ),
+        # )
 
         # (batch_size, sub_seq_len, input_dim)
         inputs = F.concat(input_lags, time_feat, repeated_static_feat, dim=-1)
@@ -519,14 +520,7 @@ class DeepARPredictionNetwork(DeepARNetwork):
                 subsequences_length=1,
             )
 
-            input_lags = F.reshape(
-                data=lags,
-                shape=(
-                    lags.shape[0],
-                    lags.shape[1],
-                    lags.shape[2] * lags.shape[3],
-                ),
-            )
+            input_lags = F.reshape(data=lags, shape=(-1, 1, -3,),)
 
             # (batch_size * num_samples, 1, prod(target_shape) * num_lags + num_time_features + num_static_features)
             decoder_input = F.concat(
