@@ -24,7 +24,7 @@ from gluonts.model.common import Tensor
 from gluonts.dataset.common import Dataset
 
 
-class HybridRepresentation(Representation):
+class RepresentationChain(Representation):
     """
     A class representing a hybrid approach of combining multiple representations into a single representation.
     Representations will be combined by concatenating them on dim=-1.
@@ -36,22 +36,22 @@ class HybridRepresentation(Representation):
     """
 
     @validated()
-    def __init__(self, representations: List, *args, **kwargs):
+    def __init__(self, chain: List, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.representations = representations
-        for representation in self.representations:
+        self.chain = chain
+        for representation in self.chain:
             self.register_child(representation)
 
     def initialize_from_dataset(
         self, input_dataset: Dataset, ctx: mx.Context = get_mxnet_context()
     ):
-        for representation in self.representations:
+        for representation in self.chain:
             representation.initialize_from_dataset(input_dataset, ctx)
 
     def initialize_from_array(
         self, input_array: np.ndarray, ctx: mx.Context = get_mxnet_context()
     ):
-        for representation in self.representations:
+        for representation in self.chain:
             representation.initialize_from_array(input_array, ctx)
 
     # noinspection PyMethodOverriding
@@ -64,19 +64,17 @@ class HybridRepresentation(Representation):
         rep_params: List[Tensor],
         **kwargs,
     ) -> Tuple[Tensor, Tensor, List[Tensor]]:
-        representation_list = []
-
-        for representation in self.representations:
-            representation_data, _, _ = representation(
+        for representation in self.chain:
+            data, scale, rep_params = representation(
                 data, observed_indicator, scale, rep_params,
             )
-            representation_list.append(representation_data)
+        return data, scale, rep_params
 
-        representation_agg = F.concat(*representation_list, dim=-1)
-
-        if scale is None:
-            scale = F.expand_dims(
-                F.sum(data, axis=-1) / F.sum(observed_indicator, axis=-1), -1
+    def post_transform(
+        self, F, samples: Tensor, scale: Tensor, rep_params: List[Tensor]
+    ) -> Tensor:
+        for representation in self.chain[::-1]:
+            samples = representation.post_transform(
+                F, samples, scale, rep_params,
             )
-
-        return representation_agg, scale, []
+        return samples

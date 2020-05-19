@@ -31,17 +31,22 @@ class MeanScaling(Representation):
 
     Parameters
     ----------
-    clip_max
-        The maximum value to which re-scaled values will be clipped to. By default, max values will not be clipped.
-        (default: -1)
     minimum_scale
         The minimum value to which re-scaled values will be clipped to.
         (default: 1e-10)
+    clip_max
+        The maximum value to which re-scaled values will be clipped to. 
+        Negative values will be clipped at -clip_max and positive values at clip_max.
+        (default: None)
     """
 
     @validated()
     def __init__(
-        self, clip_max: int = -1, scale_min: float = 1e-10, *args, **kwargs
+        self,
+        scale_min: float = 1e-10,
+        clip_max: Optional[float] = None,
+        *args,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.scale_min = scale_min
@@ -82,6 +87,7 @@ class MeanScaling(Representation):
         observed_indicator: Tensor,
         scale: Optional[Tensor],
         rep_params: List[Tensor],
+        **kwargs,
     ) -> Tuple[Tensor, Tensor, List[Tensor]]:
         data = F.cast(data, dtype="float32")
 
@@ -91,7 +97,7 @@ class MeanScaling(Representation):
 
         scaled_data = F.broadcast_div(data, scale)
 
-        if self.clip_max != -1:
+        if self.clip_max is not None:
             scaled_data = F.clip(scaled_data, -self.clip_max, self.clip_max)
 
         return scaled_data, scale, []

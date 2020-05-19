@@ -12,45 +12,41 @@
 # permissions and limitations under the License.
 
 from .representation import Representation
-from .custom_binning import CustomBinning
-from .global_relative_binning import GlobalRelativeBinning
-from .local_absolute_binning import LocalAbsoluteBinning
 
 # Standard library imports
 from typing import Tuple, Optional, Union, List
-
+import numpy as np
+import mxnet as mx
 from mxnet.gluon import nn
 
 # First-party imports
-from gluonts.core.component import validated
+from gluonts.core.component import validated, get_mxnet_context
 from gluonts.model.common import Tensor
 from gluonts.dataset.common import Dataset
-
-
-Binning = Union[CustomBinning, GlobalRelativeBinning, LocalAbsoluteBinning]
 
 
 class Embedding(Representation):
     """
     A class representing an embedding operation on top of a given binning.
+    Note that this representation is intended to applied on top of categorical/binned data.
     
     Parameters
     ----------
-    binning
-        The underlying binning.
+    num_bins
+        The number of categories/bins of the data on which this representation is applied.
     size
         The desired embedding size.
         (default: round(num_bins**(1/4)))
     """
 
     @validated()
-    def __init__(self, binning: Binning, size: int = -1, *args, **kwargs):
+    def __init__(
+        self, num_bins: int, size: Optional[int] = None, *args, **kwargs
+    ):
         super().__init__(*args, **kwargs)
-        self.binning = binning
-        self.register_child(binning)
-        self.num_bins = binning.num_bins
+        self.num_bins = num_bins
 
-        if size == -1:
+        if size is None:
             # Embedding size heuristic that seems to work well in practice. For reference see:
             # https://developers.googleblog.com/2017/11/introducing-tensorflow-feature-columns.html
             self.size = round(self.num_bins ** (1 / 4))
@@ -61,9 +57,6 @@ class Embedding(Representation):
             input_dim=self.num_bins, output_dim=self.size
         )
 
-    def initialize_from_dataset(self, input_dataset: Dataset):
-        self.binning.initialize_from_dataset(input_dataset)
-
     # noinspection PyMethodOverriding
     def hybrid_forward(
         self,
@@ -72,11 +65,7 @@ class Embedding(Representation):
         observed_indicator: Tensor,
         scale: Optional[Tensor],
         rep_params: List[Tensor],
+        **kwargs,
     ) -> Tuple[Tensor, Tensor, List[Tensor]]:
-        repr_data, scale, rep_params = self.binning(
-            data, observed_indicator, scale, rep_params
-        )
-
-        emb_data = self.embedding(repr_data)
-
-        return emb_data, scale, rep_params
+        data = self.embedding(data)
+        return data, scale, rep_params

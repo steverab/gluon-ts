@@ -15,37 +15,30 @@ from .representation import Representation
 
 # Standard library imports
 from typing import Tuple, Optional, List
+import numpy as np
+import mxnet as mx
 
 # First-party imports
-from gluonts.core.component import validated
+from gluonts.core.component import validated, get_mxnet_context
 from gluonts.model.common import Tensor
 from gluonts.dataset.common import Dataset
 
 
 class DimExpansion(Representation):
     """
-    A class representing a dimension expansion operation of a given representation along a specified axis.
+    A class representing a dimension expansion operation along a specified axis.
 
     Parameters
     ----------
-    representation
-        The underlying representation.
     axis
         Axis on which to expand the tensor.
-        (default: 1)
+        (default: -1)
     """
 
     @validated()
-    def __init__(
-        self, representation: Representation, axis: int = -1, *args, **kwargs
-    ):
+    def __init__(self, axis: int = -1, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.representation = representation
-        self.register_child(representation)
         self.axis = axis
-
-    def initialize_from_dataset(self, input_dataset: Dataset):
-        self.representation.initialize_from_dataset(input_dataset)
 
     # noinspection PyMethodOverriding
     def hybrid_forward(
@@ -55,11 +48,7 @@ class DimExpansion(Representation):
         observed_indicator: Tensor,
         scale: Optional[Tensor],
         rep_params: List[Tensor],
+        **kwargs,
     ) -> Tuple[Tensor, Tensor, List[Tensor]]:
-        repr_data, scale, rep_params = self.representation(
-            data, observed_indicator, scale, rep_params
-        )
-
-        repr_data = F.expand_dims(repr_data, axis=self.axis)
-
-        return repr_data, scale, rep_params
+        data = F.expand_dims(data, axis=self.axis)
+        return data, scale, rep_params
