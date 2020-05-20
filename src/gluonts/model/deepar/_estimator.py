@@ -50,6 +50,7 @@ from gluonts.representation import (
     MeanScaling,
     NOPScaling,
     DimExpansion,
+    RepresentationChain,
 )
 
 # Relative imports
@@ -139,7 +140,9 @@ class DeepAREstimator(GluonEstimator):
         use_feat_static_real: bool = False,
         cardinality: Optional[List[int]] = None,
         embedding_dimension: Optional[List[int]] = None,
-        input_repr: Representation = DimExpansion(MeanScaling()),
+        input_repr: Representation = RepresentationChain(
+            chain=[MeanScaling(), DimExpansion()]
+        ),
         output_repr: Representation = NOPScaling(),
         distr_output: DistributionOutput = StudentTOutput(),
         lags_seq: Optional[List[int]] = None,

@@ -51,6 +51,7 @@ from gluonts.representation import (
     Representation,
     GlobalRelativeBinning,
     Embedding,
+    RepresentationChain,
 )
 from gluonts.distribution import DistributionOutput, CategoricalOutput
 
@@ -144,8 +145,11 @@ class WaveNetEstimator(GluonEstimator):
         temperature: float = 1.0,
         act_type: str = "elu",
         num_parallel_samples: int = 200,
-        input_repr: Representation = Embedding(
-            GlobalRelativeBinning(num_bins=1024)
+        input_repr: Representation = RepresentationChain(
+            chain=[
+                GlobalRelativeBinning(num_bins=1024),
+                Embedding(num_bins=1024),
+            ]
         ),
         output_repr: Representation = GlobalRelativeBinning(num_bins=1024),
         distr_output: DistributionOutput = CategoricalOutput(num_cats=1024),

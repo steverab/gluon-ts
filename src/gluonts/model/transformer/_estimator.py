@@ -49,6 +49,7 @@ from gluonts.representation import (
     MeanScaling,
     NOPScaling,
     DimExpansion,
+    RepresentationChain,
 )
 
 # Relative imports
@@ -138,7 +139,9 @@ class TransformerEstimator(GluonEstimator):
         dropout_rate: float = 0.1,
         cardinality: Optional[List[int]] = None,
         embedding_dimension: int = 20,
-        input_repr: Representation = DimExpansion(MeanScaling()),
+        input_repr: Representation = RepresentationChain(
+            chain=[MeanScaling(), DimExpansion()]
+        ),
         output_repr: Representation = NOPScaling(),
         distr_output: DistributionOutput = StudentTOutput(),
         model_dim: int = 32,

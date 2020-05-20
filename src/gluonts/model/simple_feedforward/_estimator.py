@@ -36,6 +36,7 @@ from gluonts.representation import (
     MeanScaling,
     NOPScaling,
     DimExpansion,
+    RepresentationChain,
 )
 
 # Relative imports
@@ -113,7 +114,9 @@ class SimpleFeedForwardEstimator(GluonEstimator):
         trainer: Trainer = Trainer(),
         num_hidden_dimensions: Optional[List[int]] = None,
         context_length: Optional[int] = None,
-        input_repr: Representation = DimExpansion(MeanScaling()),
+        input_repr: Representation = RepresentationChain(
+            chain=[MeanScaling(), DimExpansion()]
+        ),
         output_repr: Representation = NOPScaling(),
         distr_output: DistributionOutput = StudentTOutput(),
         batch_normalization: bool = False,
