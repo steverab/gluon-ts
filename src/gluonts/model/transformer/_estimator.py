@@ -47,7 +47,6 @@ from gluonts.transform import (
 from gluonts.representation import (
     Representation,
     MeanScaling,
-    NOPScaling,
     DimExpansion,
     RepresentationChain,
 )
@@ -94,7 +93,7 @@ class TransformerEstimator(GluonEstimator):
             (default: DimExpansion(MeanScaling()))
         output_repr
             Representation for the model outputs.
-            (default: NOPScaling())
+            (default: Representation())
         distr_output
             Distribution to use to evaluate observations and sample predictions
             (default: StudentTOutput())
@@ -142,7 +141,7 @@ class TransformerEstimator(GluonEstimator):
         input_repr: Representation = RepresentationChain(
             chain=[MeanScaling(), DimExpansion()]
         ),
-        output_repr: Representation = NOPScaling(),
+        output_repr: Representation = Representation(),
         distr_output: DistributionOutput = StudentTOutput(),
         model_dim: int = 32,
         inner_ff_dim_scale: int = 4,

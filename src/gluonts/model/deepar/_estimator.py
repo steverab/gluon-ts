@@ -22,6 +22,7 @@ from mxnet.gluon import HybridBlock
 from gluonts.core.component import DType, validated
 from gluonts.dataset.common import Dataset
 from gluonts.dataset.field_names import FieldName
+from gluonts.dataset.stat import calculate_dataset_statistics
 from gluonts.distribution import DistributionOutput, StudentTOutput
 from gluonts.model.estimator import GluonEstimator
 from gluonts.model.predictor import Predictor, RepresentableBlockPredictor
@@ -48,7 +49,6 @@ from gluonts.transform import (
 from gluonts.representation import (
     Representation,
     MeanScaling,
-    NOPScaling,
     DimExpansion,
     RepresentationChain,
 )
@@ -108,7 +108,7 @@ class DeepAREstimator(GluonEstimator):
         (default: DimExpansion(MeanScaling()))
     output_repr
         Representation for the model outputs.
-        (default: NOPScaling())
+        (default: Representation())
     distr_output
         Distribution to use to evaluate observations and sample predictions
         (default: StudentTOutput())
@@ -143,7 +143,7 @@ class DeepAREstimator(GluonEstimator):
         input_repr: Representation = RepresentationChain(
             chain=[MeanScaling(), DimExpansion()]
         ),
-        output_repr: Representation = NOPScaling(),
+        output_repr: Representation = Representation(),
         distr_output: DistributionOutput = StudentTOutput(),
         lags_seq: Optional[List[int]] = None,
         time_features: Optional[List[TimeFeature]] = None,
@@ -161,8 +161,8 @@ class DeepAREstimator(GluonEstimator):
         assert num_layers > 0, "The value of `num_layers` should be > 0"
         assert num_cells > 0, "The value of `num_cells` should be > 0"
         assert dropout_rate >= 0, "The value of `dropout_rate` should be >= 0"
-        assert (cardinality is not None and use_feat_static_cat) or (
-            cardinality is None and not use_feat_static_cat
+        assert (cardinality and use_feat_static_cat) or (
+            not (cardinality or use_feat_static_cat)
         ), "You should set `cardinality` if and only if `use_feat_static_cat=True`"
         assert cardinality is None or all(
             [c > 0 for c in cardinality]
@@ -212,6 +212,16 @@ class DeepAREstimator(GluonEstimator):
         self.history_length = self.context_length + max(self.lags_seq)
 
         self.num_parallel_samples = num_parallel_samples
+
+    @classmethod
+    def derive_auto_fields(cls, train_iter):
+        stats = calculate_dataset_statistics(train_iter)
+
+        return {
+            "use_feat_dynamic_real": stats.num_feat_dynamic_real > 0,
+            "use_feat_static_cat": bool(stats.feat_static_cat),
+            "cardinality": [len(cats) for cats in stats.feat_static_cat],
+        }
 
     def train(
         self,

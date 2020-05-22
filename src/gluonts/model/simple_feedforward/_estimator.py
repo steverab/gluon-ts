@@ -34,7 +34,6 @@ from gluonts.transform import (
 from gluonts.representation import (
     Representation,
     MeanScaling,
-    NOPScaling,
     DimExpansion,
     RepresentationChain,
 )
@@ -92,7 +91,7 @@ class SimpleFeedForwardEstimator(GluonEstimator):
         (default: DimExpansion(MeanScaling()))
     output_repr
         Representation for the model outputs.
-        (default: NOPScaling())
+        (default: Representation())
     distr_output
         Distribution to fit (default: StudentTOutput())
     batch_normalization
@@ -117,7 +116,7 @@ class SimpleFeedForwardEstimator(GluonEstimator):
         input_repr: Representation = RepresentationChain(
             chain=[MeanScaling(), DimExpansion()]
         ),
-        output_repr: Representation = NOPScaling(),
+        output_repr: Representation = Representation(),
         distr_output: DistributionOutput = StudentTOutput(),
         batch_normalization: bool = False,
         num_parallel_samples: int = 100,
